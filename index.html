@@ -3,56 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Camera List</title>
+    <title>Select Camera</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             padding: 20px;
         }
-        ul {
-            list-style-type: none;
-            padding: 0;
-        }
-        li {
-            padding: 10px;
-            border-bottom: 1px solid #ccc;
+        video {
+            width: 100%;
+            max-width: 600px;
+            margin-top: 20px;
+            border: 1px solid #ddd;
         }
     </style>
 </head>
 <body>
 
-<h1>List of I/O devices</h1>
-<ul id="camera-list"></ul>
+<h1>Select a Camera</h1>
+<select id="camera-select"></select>
+<video id="video" autoplay playsinline></video>
 
 <script>
+    let currentStream = null;
 
+    // Function to list all cameras and populate the dropdown
     function listCameras() {
-      console.log(navigator);
         navigator.mediaDevices.enumerateDevices()
             .then(function(devices) {
-              console.log(devices);
-                const cameraList = document.getElementById('camera-list');
+                const videoInputDevices = devices.filter(device => device.kind === 'videoinput');
+                const cameraSelect = document.getElementById('camera-select');
 
-                if (devices.length > 0) {
-                    devices.forEach(device => {
-                        const li = document.createElement('li');
-                        li.textContent = `Device: ${device.kind} (ID: ${device.deviceId})`;
-                        cameraList.appendChild(li);
-                    });
-                } else {
-                    const li = document.createElement('li');
-                    li.textContent = 'No cameras connected.';
-                    cameraList.appendChild(li);
+                videoInputDevices.forEach(device => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.text = device.label || `Camera ${cameraSelect.length + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+
+                if (videoInputDevices.length > 0) {
+                    startStream(videoInputDevices[0].deviceId); // Start stream with the first camera by default
                 }
             })
             .catch(function(err) {
                 console.error('Error accessing devices:', err);
-                const cameraList = document.getElementById('camera-list');
-                const li = document.createElement('li');
-                li.textContent = 'Error accessing devices. Please check your permissions or browser settings.';
-                cameraList.appendChild(li);
             });
     }
+
+    // Function to start video stream from the selected camera
+    function startStream(deviceId) {
+        if (currentStream) {
+            // Stop the previous stream if there's any
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+            video: {
+                deviceId: deviceId ? { exact: deviceId } : undefined // Use undefined if no deviceId is provided
+            }
+        };
+
+        navigator.mediaDevices.getUserMedia(constraints)
+            .then(function(stream) {
+                currentStream = stream;
+                const videoElement = document.getElementById('video');
+                videoElement.srcObject = stream;
+            })
+            .catch(function(err) {
+                if (err.name === 'OverconstrainedError') {
+                    console.log('Camera not available with the specified constraints. Trying default camera...');
+                    // Retry with the default camera without the deviceId constraint
+                    navigator.mediaDevices.getUserMedia({ video: true })
+                        .then(function(defaultStream) {
+                            currentStream = defaultStream;
+                            const videoElement = document.getElementById('video');
+                            videoElement.srcObject = defaultStream;
+                        })
+                        .catch(function(defaultErr) {
+                            console.error('Error accessing default camera:', defaultErr);
+                        });
+                } else {
+                    console.error('Error accessing camera:', err);
+                }
+            });
+    }
+
+    // On camera selection change, start the stream with the new camera
+    document.getElementById('camera-select').addEventListener('change', function() {
+        const selectedDeviceId = this.value;
+        startStream(selectedDeviceId);
+    });
 
     // On page load, list the cameras
     window.onload = function() {
